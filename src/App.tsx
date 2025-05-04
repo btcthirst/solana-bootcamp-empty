@@ -19,6 +19,7 @@ import { EscrowProgram } from "@/solana-service/program";
 import { Wallet } from "@coral-xyz/anchor";
 import { OffersPage } from "@/pages/all-offers";
 import { OpenOffersPage } from "@/pages/open-offers";
+import { UserTokensPage } from "./pages/user-tokens";
 import AccountOffers from "@/pages/account-offers";
 import { Offer } from "@/types/offer";
 
@@ -27,6 +28,8 @@ import { createPass, query } from "./utils";
 
 import TakeOfferDialog from "@/components/dialogs/take-offer-dialog";
 
+import { TOKEN_PROGRAM_ID as TOKEN_PROGRAM } from "@solana/spl-token";
+
 const App: React.FC = () => {
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,7 +37,7 @@ const App: React.FC = () => {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const wallet = useAnchorWallet();
   const queryClient = useQueryClient();
-
+  
   const { data } = useQuery({
     queryKey: ["offers"],
     async queryFn() {
@@ -45,10 +48,33 @@ const App: React.FC = () => {
     },
   });
 
+  const { data: tokens } = useQuery({
+    queryKey: ["tokens", walletAddress],
+    enabled: !!walletAddress,
+    async queryFn() {
+      const connection = new Connection(
+        clusterApiUrl(WalletAdapterNetwork.Devnet)
+      );
+      if (!walletAddress) return [];
+      const walletPublicKey = new PublicKey(walletAddress);
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+        walletPublicKey,
+        {
+          programId: new PublicKey(TOKEN_PROGRAM),
+        }
+      );
+      return tokenAccounts.value.map((account) => ({
+        mint: account.account.data.parsed.info.mint,
+        amount: account.account.data.parsed.info.tokenAmount.uiAmount,
+      }));
+    },
+  });
+
   const [currentPage, setCurrentPage] = useState({
     orders: 1,
     openOffers: 1,
     accountOffers: 1,
+    userTokens: 1,
   });
 
   const { connect, connected, publicKey, disconnect, select, wallets } =
@@ -71,6 +97,9 @@ const App: React.FC = () => {
   const totalPages = {
     orders: Math.ceil((data?.offers?.length ?? 1) / ITEMS_PER_PAGE),
     openOffers: Math.ceil((data?.offers?.length ?? 1) / ITEMS_PER_PAGE),
+    tokens: Math.ceil(
+      (tokens?.length ?? 1) / ITEMS_PER_PAGE
+    ),
   };
 
   const connectWallet = async () => {
@@ -136,10 +165,11 @@ const App: React.FC = () => {
           Password: {createPass(walletAddress)}
         </h2>
         <Tabs defaultValue="orders" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="orders">All Offers</TabsTrigger>
             <TabsTrigger value="openOffers">Open Offers</TabsTrigger>
             <TabsTrigger value="accountOffers">Account Offers</TabsTrigger>
+            <TabsTrigger value="userTokens">User Tokens</TabsTrigger>
           </TabsList>
 
           <TabsContent value="orders">
@@ -169,6 +199,18 @@ const App: React.FC = () => {
               setIsWalletConnected={setIsWalletConnected}
               loading={loading}
             />
+          </TabsContent>
+
+          <TabsContent value="userTokens">
+            <UserTokensPage
+              isWalletConnected={isWalletConnected}
+              tokens={tokens}
+              currentPage={currentPage.userTokens}
+              totalPages={totalPages.tokens}
+              onPageChange={(page) => handlePageChange("userTokens", page)}
+              onTokenClick={(token) => console.log("Token clicked:", token)}
+            />          
+
           </TabsContent>
 
           <TakeOfferDialog
